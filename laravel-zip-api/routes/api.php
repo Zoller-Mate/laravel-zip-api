@@ -18,3 +18,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/postal-codes/{id}', [PostalCodeController::class, 'update']);
     Route::delete('/postal-codes/{id}', [PostalCodeController::class, 'destroy']);
 });
+
+Route::post('/login', function (Request $request) {
+    $user = User::where('email', $request->email)->first();
+
+    if (! $user || ! Hash::check($request->password, $user->password)) {
+        return response()->json(['error' => 'Unauthenticated'], 401);
+    }
+
+    return ['token' => $user->createToken('api')->plainTextToken];
+});

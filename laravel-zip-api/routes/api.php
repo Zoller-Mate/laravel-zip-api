@@ -2,13 +2,13 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\PostalCodeController;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
-
-
-use App\Http\Controllers\PostalCodeController;
 
 Route::get('/postal-codes', [PostalCodeController::class, 'index']);
 Route::get('/postal-codes/{id}', [PostalCodeController::class, 'show']);

@@ -59,27 +59,43 @@ class PostalCodeController extends Controller
         $postal = PostalCode::findOrFail($id);
 
         $request->validate([
-            'postal_code' => 'sometimes|required',
-            'place_name' => 'sometimes|required',
-            'county_name' => 'sometimes|required',
+            'postal_code' => 'sometimes|required|string',
+            'place_name' => 'sometimes|required|string',
+            'county_name' => 'sometimes|required|string',
         ]);
 
-        if ($request->county_name) {
+        $placeId = $postal->place_id;
+
+        if ($request->has('county_name') && $request->has('place_name')) {
             $county = County::firstOrCreate(['name' => $request->county_name]);
-            if ($request->place_name) {
-                $place = Place::firstOrCreate([
-                    'name' => $request->place_name,
-                    'county_id' => $county->id
-                ]);
-            }
+            $place = Place::firstOrCreate([
+                'name' => $request->place_name,
+                'county_id' => $county->id
+            ]);
+            $placeId = $place->id;
         }
 
-        $postal->update([
-            'postal_code' => $request->postal_code ?? $postal->postal_code,
-            'place_id' => $place->id ?? $postal->place_id,
-        ]);
+        $updateData = [];
+        
+        if ($request->has('postal_code')) {
+            $updateData['postal_code'] = $request->postal_code;
+        }
+        
+        if ($placeId !== $postal->place_id) {
+            $updateData['place_id'] = $placeId;
+        }
 
-        return response()->json($postal);
+        if (!empty($updateData)) {
+            $postal->update($updateData);
+        }
+
+        $postal->refresh();
+        $postal->load('place.county');
+
+        return response()->json([
+            'message' => 'Postal code updated successfully',
+            'data' => $postal
+        ], 200);
     }
 
     /**

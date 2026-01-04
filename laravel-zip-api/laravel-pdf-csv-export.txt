@@ -1,0 +1,247 @@
+/**
+ * Laravel PDF export
+ */
+ 
+> composer require barryvdh/laravel-dompdf
+
+	/**
+	 * routes/web.php
+	 */
+	 
+		Route::get('/counties/export/pdf', [CountyController::class, 'exportPdf'])->name('counties.export.pdf');
+
+	/**
+	 * CountyController
+	 */
+	use Barryvdh\DomPDF\Facade\Pdf;
+	
+	public function exportPdf(Request $request)
+    {
+        $response = Http::api()->get('/counties');
+        $counties = $this->getCounties($response);
+        $pdf = Pdf::loadView('pdf.counties', ['entities' => $counties]);
+
+        return $pdf->download('counties.pdf');
+    }
+
+	private function getCounties($response)
+    {
+        $responseBody = json_decode($response->body(), false); // objektumként dekódoljuk
+        $data = $responseBody->data ?? null;
+        $results = [];
+
+        if (!empty($data)) {
+            $results = $data->counties ?? [];
+        }
+
+        return $results;
+    }	
+	
+	/**
+	 * resources/views/pdf.blade.php
+	 * Ez a sablonunk. 
+	 * Ha csak egyféle pdf dokumentumot kell előállítani (de azért ne erre számítsunk,
+	 * mert a megrendelőnek rendszerint evés özben jön meg az étvágya)
+	 * akkor ez és a következő blade fájl összevonható egybe. A @yield('content')
+	 * helyére kell beilleszteni @section('content')-en belüli részt.
+	 */
+	 
+		<!doctype html>
+		<html lang="hu">
+		<head>
+			<meta charset="utf-8">
+			<!-- CSRF Token -->
+			<meta name="csrf-token" content="{{ csrf_token() }}">
+			<title>{{ config('app.name', 'ZipCodes') }}</title>
+			<!-- 
+				olyan fontkészletet adjunk meg, amelyik helyesen jeleníti meg
+				a magyar ékezetes betűket.
+			-->	
+			<style>
+				body {
+					font-family: DejaVu Sans, sans-serif;
+				}
+				.odd {
+					background-color: lightgrey;
+				}
+				.even {
+					background-color: grey;
+				}
+			</style>
+		</head>
+		<body>
+		<div class="center">
+			<main>
+				@yield('content')
+			</main>
+
+			<footer>
+				{{ config('app.name', 'ZipCodes') }} v{{ env('APP_VERSION') }} (PHP v{{ PHP_VERSION }})
+			</footer>
+		</div>
+		</body>
+		</html>
+
+	/**
+	 * resources/views/pdf/counties.blade.php
+	 */
+	
+		@extends('pdf')
+
+		@section('content')
+			<br>
+			<table class="center">
+				<thead>
+					<tr>
+						<th class="header" colspan="2">{{ __('Megyék') }}</th>
+					</tr>
+					<tr>
+						<th>#</th>
+						<th class="search-field">{{ __('Megnevezés') }}</th>
+					</tr>
+				</thead>
+				<tbody>
+				<!-- 
+				az $entities változót a kontroller exportPdf metódusban adtuk át
+				ebben a sorban:
+				$pdf = Pdf::loadView('pdf.counties', ['entities' => $counties]);
+				-->
+				@foreach($entities as $entity)
+					@if($loop->iteration % 2 == 0)
+						<tr class="even">
+					@else
+						<tr class="odd">
+							@endif
+							<td> {{$entity->id}}</td>
+							<td>{{$entity->name}}</td>
+						</tr>
+				@endforeach
+				</tbody>
+			</table>
+		@endsection
+
+/**
+ * Laravel CSV export
+ */
+
+	/**
+	 * routes/web.php
+	 */
+	 
+	Route::get('/counties/export/csv', [CountyController::class, 'exportCsv'])->name('counties.export.csv'); 
+	
+	/**
+	 * CountyController
+	 */
+	
+	public function exportCsv(Request $request)
+    {
+        $needle = $request->get('needle');
+
+        try {
+            $url = $needle ? "counties?needle=" . urlencode($needle) : "counties";
+
+            $response = Http::api()->get($url);
+
+            if ($response->failed()) {
+                $message = $response->json('message') ?? 'Ismeretlen hiba történt.';
+                return redirect()
+                    ->route('counties.index')
+                    ->with('error', "Hiba történt a lekérdezés során: $message");
+            }
+			
+            $counties = $this->getCounties($response);
+
+            $csv = "ID,Név\n";
+            foreach ($counties as $county) {
+                $csv .= "{$county->id},{$county->name}\n";
+            }
+
+            return response($csv)
+                ->header('Content-Type', 'text/csv')
+                ->header('Content-Disposition', 'attachment; filename="counties.csv"');
+
+        } catch (\Exception $e) {
+            return redirect()
+                ->route('counties.index')
+                ->with('error', "Nem sikerült betölteni a megyéket: " . $e->getMessage());
+        }
+    }
+
+/**
+ * Email küldése
+ *
+ * https://laravel.com/docs/12.x/mail
+ *
+ * teszteléshez:
+ * https://github.com/mailhog/MailHog/releases/download/v1.0.0/MailHog_windows_amd64.exe
+ */
+
+> php artisan make:mail CountiesMail
+
+> php artisan make:view mail.counties 
+
+	/**
+	 * resources\views\mail\counties.blade.php
+	 */
+	 
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<title>CarLog</title>
+		</head>
+
+		<body>
+		<p>Tisztelt Címzett</p>
+		<p>Tájékoztatjuk, hogy nyilvántartásunkban az alábbi megyék szerepelnek:</p>
+		<br>
+		<table class="center">
+			<thead>
+			<tr>
+				<th class="header" colspan="2">{{ __('Megyék') }}</th>
+			</tr>
+			<tr>
+				<th>#</th>
+				<th class="search-field">{{ __('Megnevezés') }}</th>
+			</tr>
+			</thead>
+			<tbody>
+			@foreach($entities as $entity)
+				@if($loop->iteration % 2 == 0)
+					<tr class="even">
+				@else
+					<tr class="odd">
+						@endif
+						<td> {{$entity->id}}</td>
+						<td>{{$entity->name}}</td>
+					</tr>
+					@endforeach
+			</tbody>
+		</table>
+		<p>Üdvözlettel,<br>
+			Nyilvántartó<br>
+			tel: +36......<br>
+			email: info@nyilvantarto.hu<br>
+		</p>
+		</body>
+		</html>
+	 
+	/**
+	 * routes\web.php
+	 */
+	 
+	 Route::get('/counties/mail', [CountyController::class, 'sendMail'])->name('mail.counties');
+
+	/**
+	 * CountyController
+	 */
+	 
+	public function sendMail()
+    {
+        $response = Http::api()->get('/counties');
+        $counties = $this->getCounties($response);
+
+        Mail::to('admin@example.com')->send(new CountiesMail($counties));
+		
+        return redirect()->route('counties.index')->with('success', 'Email elküldve!');
+    }

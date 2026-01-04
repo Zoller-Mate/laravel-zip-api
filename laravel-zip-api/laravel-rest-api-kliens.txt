@@ -1,0 +1,405 @@
+/**
+ * Laravel telepítése
+ */
+ 
+> composer create-project laravel/laravel laravel-rest-api-client
+
+> cd laravel-rest-api-client
+
+/**
+ * Laravel .env fájl-ban nincs szükség az adatbázis kapcsolathoz szükséges beállításokra
+ */
+ 
+DB_CONNECTION=sqlite
+# DB_HOST=127.0.0.1
+# DB_PORT=3306
+# DB_DATABASE=laravel_rest_api
+# DB_USERNAME=root
+# DB_PASSWORD=
+
+/**
+ * Felhasználó kezelés telepítése (opcionális)
+ */
+ 
+> composer require laravel/breeze --dev
+
+> php artisan breeze:install blade // FIGYELEM! Felülírja a web.php tartalmát
+
+## vagy 
+# php artisan breeze:install inertia
+
+## vagy
+# php artisan breeze:install react
+
+> npm install && npm run build
+
+/**
+ * Tóth Milántól az inertia ill. react verzióhoz
+ */
+ 
+	> composer require laravel/breeze
+	> php artisan breeze:install react
+	> composer require inertiajs/inertia-laravel
+	> node "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js"  install @inertiajs/react 
+	> node "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js"  run dev (front endhez, ne felejtsd el, mert máskülönben buggosan fog futni a frontend, de továbbra sem ad hibakódot minden esetben)
+	
+	php artisan serve (backendhez/szerverhez)
+	 
+	!!! minden node "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js" helyettesíthető npm-mel és fordíva, én a "File C:\Program Files\nodejs\npm.ps1 cannot be loaded because running scripts is disabled on this system." errorkód miatt használtam ezt a megoldást.
+	!! a vs code meglehet, hogy nem ismeri fel az Inertiaát, zárd be és nyisd meg újra ilyenkor 
+
+
+/**
+ * Http makró hozzáadása az app\Http\Providers\AppServiceProvider.php fájlban
+ */
+ 
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\ServiceProvider;
+
+class AppServiceProvider extends ServiceProvider
+{
+	(...)
+	
+	public function boot(): void
+    {
+        Http::macro('api', function () {
+            return Http::withHeaders([
+                'Accept' => 'application/json',
+            ])->baseUrl(config('services.api.base_uri'));
+        });
+    }
+
+/**
+ * az API url megadása a config\services.php-ban
+ * Ez megy ki a felhasználóhoz, bekerül a repóba
+ */
+ 
+	'api' => [
+        'base_uri' => env('API_URL', 'https://api.example.com/api'),
+    ],
+
+/**
+ * API url megadása a .env fájlban
+ * Ez csak a fejlesztőnél létező beállítás, nem kerül a repóba
+ */
+ 
+API_URL=http://localhost:8000/api/
+
+
+/**
+ * Mivel a hitelesítést távoli szerver végzi, 
+ * módosítjuk az app\Http\Controllers\Auth\AuthenticatedSessionController.php fájlban 
+ * a store() (login) és destroy() (kijelentkezés) metódust.
+ */
+
+	public function store(LoginRequest $request): RedirectResponse
+    {
+        // Bejelentkezünk az API-ba
+		$response = Http::api()->post('/user/login', [
+            'email' => $request->email,
+            'password' => $request->password,
+        ]);
+
+		// Ha sikeres választ kaptunk, akkor elmentjük az adatokat a session-be
+        if ($response->successful()) {
+			// elmentjük a bejelentkezési adatokat a session-be.
+            $responseBody = json_decode($response->body());
+            if (empty($responseBody->data)) {
+                return back()->withErrors([
+                    'message' => $responseBody->message,
+                ]);
+            }
+			// az, hogy a token és a többi milyen formában van a response-ban
+			// az API programozójától függ, pl: "data" tömbön belül
+            session([
+                'api_token' => $responseBody->data->token,
+                'user_name' => $responseBody->data->name,
+                'user_email' => $responseBody->data->email,
+            ]);
+			
+            return redirect()->intended('/');
+        }
+
+        return back()->withErrors([
+            'email' => 'Hibás bejelentkezési adatok.',
+        ]);
+    }
+	
+	public function destroy(Request $request): RedirectResponse
+    {
+        session()->forget('api_token');
+		session()->forget('user_name');
+		session()->forget('user_email');
+		
+        return redirect('/');
+    }
+	
+	
+/**
+ * Controller létrehozása
+ */
+
+Mielőtt létrehozzuk a saját Controller-t, adjuk hozzá az alábbit az 
+App\Http\Controllers\Controller.php-hoz. Figyeljük meg, hogy ez a 
+kontrolereink őse.
+
+<?php
+
+namespace App\Http\Controllers;
+
+abstract class Controller
+{
+    protected $token;
+
+    function __construct()
+    {
+        $this->token = session('api_token');
+    }
+
+    function isAuthenticated()
+    {
+        return session()->has('api_token');
+    }
+}
+
+
+> php artisan make:controller CountyController 
+
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\CountyRequest;
+use App\Mail\CountiesMail;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
+
+class CountyController extends Controller
+{
+
+    public function index(Request $request)
+    {
+        $needle = $request->get('needle');
+
+        try {
+            $url = $needle ? "counties?needle=" . urlencode($needle) : "counties";
+
+            $response = Http::api()->get($url);
+
+            if ($response->failed()) {
+                $message = $response->json('message') ?? 'Ismeretlen hiba történt.';
+                return redirect()
+                    ->route('counties.index')
+                    ->with('error', "Hiba történt a lekérdezés során: $message");
+            }
+
+            $counties = $this->getCounties($response);
+
+            return view('counties.index', ['entities' => $counties, 'isAuthenticated' => $this->isAuthenticated()]);
+
+        } catch (\Exception $e) {
+            return redirect()
+                ->route('counties.index')
+                ->with('error', "Nem sikerült betölteni a megyéket: " . $e->getMessage());
+        }
+    }
+
+    public function show($id)
+    {
+        try {
+            $response = Http::api()->get("/counties/$id");
+
+            if ($response->failed()) {
+                $message = $response->json('message') ?? 'A megye nem található vagy hiba történt.';
+                return redirect()
+                    ->route('counties.index')
+                    ->with('error', "Hiba: $message");
+            }
+            $county = $this->getCounty($response);
+
+            if (!$county) {
+                return redirect()
+                    ->route('counties.index')
+                    ->with('error', "A megye adatai nem érhetők el.");
+            }
+
+            return view('counties.show', ['entity' => $county]);
+
+        } catch (\Exception $e) {
+            return redirect()
+                ->route('counties.index')
+                ->with('error', "Nem sikerült betölteni a megye adatait: " . $e->getMessage());
+        }
+    }
+
+
+    public function create()
+    {
+        return view('counties.create');
+    }
+
+    public function store(CountyRequest $request)
+    {
+        $name = $request->get('name');
+
+        try {
+            $response = Http::api()
+                ->withToken($this->token)
+                ->post('/counties', ['name' => $name]);
+
+            if ($response->failed()) {
+                // Ha az API válaszolt, de hibás státuszkóddal (pl. 422, 403, 500)
+                $message = $response->json('message') ?? 'Nem sikerült létrehozni a megyét.';
+                return redirect()
+                    ->route('counties.index')
+                    ->with('error', "Hiba: $message");
+            }
+
+            return redirect()
+                ->route('counties.index')
+                ->with('success', "$name megye sikeresen létrehozva!");
+
+        } catch (\Exception $e) {
+            // Hálózati vagy JSON dekódolási hiba
+            return redirect()
+                ->route('counties.index')
+                ->with('error', "Nem sikerült kommunikálni az API-val: " . $e->getMessage());
+        }
+    }
+
+
+    public function edit($id)
+    {
+        try {
+            $response = Http::api()->get("/counties/$id");
+
+            if ($response->failed()) {
+                $message = $response->json('message') ?? 'A megye nem található vagy hiba történt.';
+                return redirect()
+                    ->route('counties.index')
+                    ->with('error', "Hiba: $message");
+            }
+
+            $county = $this->getCounty($response);
+
+            if (!$county) {
+                return redirect()
+                    ->route('counties.index')
+                    ->with('error', "A megye adatai nem érhetők el.");
+            }
+
+            return view('counties.edit', ['entity' => $county]);
+
+        } catch (\Exception $e) {
+            return redirect()
+                ->route('counties.index')
+                ->with('error', "Nem sikerült betölteni a megye szerkesztő nézetét: " . $e->getMessage());
+        }
+    }
+
+    public function update(CountyRequest $request, $id)
+    {
+        $name = $request->get('name');
+
+        try {
+            $response = Http::api()
+                ->withToken($this->token)
+                ->put("/counties/$id", ['name' => $name]);
+
+            if ($response->successful()) {
+                return redirect()
+                    ->route('counties.index')
+                    ->with('success', "$name megye sikeresen frissítve!");
+            }
+
+            // Ha nem sikeres, de nem dobott kivételt (pl. 422)
+            $errorMessage = $response->json('message') ?? 'Ismeretlen hiba történt.';
+            return redirect()
+                ->route('counties.index')
+                ->with('error', "Hiba történt: $errorMessage");
+
+        } catch (\Exception $e) {
+            // Hálózati vagy egyéb kivétel
+            return redirect()
+                ->route('counties.index')
+                ->with('error', "Nem sikerült frissíteni: " . $e->getMessage());
+        }
+    }
+
+    public function destroy($id)
+    {
+        try {
+            $response = Http::api()
+                ->withToken($this->token)
+                ->delete("/counties/$id", ['id' => $id]);
+
+            if ($response->failed()) {
+                $message = $response->json('message') ?? 'Nem sikerült törölni a megyét.';
+                return redirect()
+                    ->route('counties.index')
+                    ->with('error', "Hiba: $message");
+            }
+
+            return redirect()
+                ->route('counties.index')
+                ->with('success', "Megye sikeresen törölve!");
+
+        } catch (\Exception $e) {
+            return redirect()
+                ->route('counties.index')
+                ->with('error', "Nem sikerült kommunikálni az API-val: " . $e->getMessage());
+        }
+    }
+
+	// Segédfüggvény az adatok kinyeréséhez a response-ból
+    private function getCounties($response)
+    {
+        $responseBody = json_decode($response->body(), false); // objektumként dekódoljuk
+        $data = $responseBody->data ?? null;
+        $results = [];
+
+        if (!empty($data)) {
+            $results = $data->counties ?? [];
+        }
+
+        return $results;
+    }
+
+    private function getCounty($response)
+    {
+        $responseBody = json_decode($response->body(), false); // objektumként dekódoljuk
+        $data = $responseBody->data ?? null;
+        $result = [];
+
+        if (!empty($data)) {
+            $result = $data->county ?? [];
+        }
+
+        return $result;
+    }
+}
+
+
+/**
+ * végpontok hozzáadása routes\web.php fájlhoz
+ */
+
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\UserController;
+
+Route::post('/users/login', [UsersController::class, 'login']); 
+
+Route::get("/counties", [CountyController::class, "index"])->name('counties.index');
+Route::get("/counties/{id}", [CountyController::class, "show"])->name('counties.show');
+Route::post("/counties/{id}", [CountyController::class, "edit"])->name('counties.edit');
+Route::post('/counties', [CountyController::class, 'store'])->name('counties.store');
+Route::put("/counties/{id}", [CountyController::class, "update"])->name('counties.update');
+Route::delete("/counties/{id}", [CountyController::class, "destroy"])->name('counties.destroy');
+
+Route::get('/counties/export/csv', [CountyController::class, 'exportCsv'])->name('counties.export.csv');
+Route::get('/counties/export/pdf', [CountyController::class, 'exportPdf'])->name('counties.export.pdf');
+Route::get('/counties/mail', [CountyController::class, 'sendMail'])->name('counties.mail');

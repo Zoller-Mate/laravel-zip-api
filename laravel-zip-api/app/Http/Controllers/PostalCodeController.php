@@ -10,16 +10,71 @@ use Illuminate\Http\Request;
 class PostalCodeController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * @api {get} /postal-codes Get all postal codes
+     * @apiName GetPostalCodes
+     * @apiGroup PostalCodes
+     * @apiVersion 1.0.0
+     *
+     * @apiSuccess {Object[]} postal_codes List of postal codes
+     * @apiSuccess {Number} postal_codes.id Postal code ID
+     * @apiSuccess {String} postal_codes.postal_code The postal code
+     * @apiSuccess {Number} postal_codes.place_id Place ID
+     * @apiSuccess {Object} postal_codes.place Place details
+     * @apiSuccess {String} postal_codes.place.name Place name
+     * @apiSuccess {Object} postal_codes.place.county County details
+     * @apiSuccess {String} postal_codes.place.county.name County name
+     *
+     * @apiSuccessExample {json} Success-Response:
+     *     HTTP/1.1 200 OK
+     *     [
+     *       {
+     *         "id": 1,
+     *         "postal_code": "1011",
+     *         "place_id": 1,
+     *         "place": {
+     *           "id": 1,
+     *           "name": "Budapest",
+     *           "county": {
+     *             "id": 1,
+     *             "name": "Budapest"
+     *           }
+     *         }
+     *       }
+     *     ]
      */
-        public function index()
+    public function index()
     {
         $postalCodes = PostalCode::with('place.county')->get();
         return response()->json($postalCodes);
     }
 
     /**
-     * Store a newly created resource in storage.
+     * @api {post} /postal-codes Create a new postal code
+     * @apiName CreatePostalCode
+     * @apiGroup PostalCodes
+     * @apiVersion 1.0.0
+     * @apiPermission authenticated
+     *
+     * @apiHeader {String} Authorization Bearer token
+     *
+     * @apiBody {String} postal_code The postal code
+     * @apiBody {String} place_name Name of the place
+     * @apiBody {String} county_name Name of the county
+     *
+     * @apiSuccess {Number} id Postal code ID
+     * @apiSuccess {String} postal_code The postal code
+     * @apiSuccess {Number} place_id Place ID
+     *
+     * @apiSuccessExample {json} Success-Response:
+     *     HTTP/1.1 201 Created
+     *     {
+     *       "id": 1,
+     *       "postal_code": "1011",
+     *       "place_id": 1
+     *     }
+     *
+     * @apiError (401) Unauthenticated User is not authenticated
+     * @apiError (422) ValidationError Validation failed
      */
     public function store(Request $request)
     {
@@ -43,7 +98,38 @@ class PostalCodeController extends Controller
     }
 
     /**
-     * Display the specified resource.
+     * @api {get} /postal-codes/:id Get a postal code by ID
+     * @apiName GetPostalCode
+     * @apiGroup PostalCodes
+     * @apiVersion 1.0.0
+     *
+     * @apiParam {Number} id Postal code unique ID
+     *
+     * @apiSuccess {Number} id Postal code ID
+     * @apiSuccess {String} postal_code The postal code
+     * @apiSuccess {Number} place_id Place ID
+     * @apiSuccess {Object} place Place details
+     * @apiSuccess {String} place.name Place name
+     * @apiSuccess {Object} place.county County details
+     * @apiSuccess {String} place.county.name County name
+     *
+     * @apiSuccessExample {json} Success-Response:
+     *     HTTP/1.1 200 OK
+     *     {
+     *       "id": 1,
+     *       "postal_code": "1011",
+     *       "place_id": 1,
+     *       "place": {
+     *         "id": 1,
+     *         "name": "Budapest",
+     *         "county": {
+     *           "id": 1,
+     *           "name": "Budapest"
+     *         }
+     *       }
+     *     }
+     *
+     * @apiError (404) NotFound Postal code not found
      */
     public function show(string $id)
     {
@@ -52,7 +138,37 @@ class PostalCodeController extends Controller
     }
 
     /**
-     * Update the specified resource in storage.
+     * @api {put} /postal-codes/:id Update a postal code
+     * @apiName UpdatePostalCode
+     * @apiGroup PostalCodes
+     * @apiVersion 1.0.0
+     * @apiPermission authenticated
+     *
+     * @apiHeader {String} Authorization Bearer token
+     *
+     * @apiParam {Number} id Postal code unique ID
+     *
+     * @apiBody {String} [postal_code] The postal code
+     * @apiBody {String} [place_name] Name of the place (requires county_name)
+     * @apiBody {String} [county_name] Name of the county (requires place_name)
+     *
+     * @apiSuccess {String} message Success message
+     * @apiSuccess {Object} data Updated postal code data
+     *
+     * @apiSuccessExample {json} Success-Response:
+     *     HTTP/1.1 200 OK
+     *     {
+     *       "message": "Postal code updated successfully",
+     *       "data": {
+     *         "id": 1,
+     *         "postal_code": "1012",
+     *         "place_id": 1
+     *       }
+     *     }
+     *
+     * @apiError (401) Unauthenticated User is not authenticated
+     * @apiError (404) NotFound Postal code not found
+     * @apiError (422) ValidationError Validation failed
      */
     public function update(Request $request, string $id)
     {
@@ -99,7 +215,26 @@ class PostalCodeController extends Controller
     }
 
     /**
-     * Remove the specified resource from storage.
+     * @api {delete} /postal-codes/:id Delete a postal code
+     * @apiName DeletePostalCode
+     * @apiGroup PostalCodes
+     * @apiVersion 1.0.0
+     * @apiPermission authenticated
+     *
+     * @apiHeader {String} Authorization Bearer token
+     *
+     * @apiParam {Number} id Postal code unique ID
+     *
+     * @apiSuccess {String} message Success message
+     *
+     * @apiSuccessExample {json} Success-Response:
+     *     HTTP/1.1 200 OK
+     *     {
+     *       "message": "Deleted successfully"
+     *     }
+     *
+     * @apiError (401) Unauthenticated User is not authenticated
+     * @apiError (404) NotFound Postal code not found
      */
     public function destroy(string $id)
     {

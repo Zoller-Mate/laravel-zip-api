@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\PostalCodeController;
+use App\Http\Controllers\CountyController;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
@@ -10,6 +11,9 @@ use Illuminate\Validation\Rules\Password;
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
+
+Route::get('/counties', [CountyController::class, 'index']);
+Route::get('/counties/{id}', [CountyController::class, 'show']);
 
 Route::get('/postal-codes', [PostalCodeController::class, 'index']);
 Route::get('/postal-codes/{id}', [PostalCodeController::class, 'show']);

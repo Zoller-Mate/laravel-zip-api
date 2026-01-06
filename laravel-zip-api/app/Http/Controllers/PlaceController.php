@@ -48,9 +48,19 @@ class PlaceController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'county_id' => 'required|exists:counties,id',
+            'postal_code' => 'required|string|max:10',
         ]);
 
-        $place = Place::create($validated);
+        $place = Place::create([
+            'name' => $validated['name'],
+            'county_id' => $validated['county_id'],
+        ]);
+
+        // Create postal code for this place
+        $place->postalCodes()->create([
+            'postal_code' => $validated['postal_code'],
+        ]);
+
         $place->load(['county', 'postalCodes']);
 
         return response()->json([
@@ -66,9 +76,25 @@ class PlaceController extends Controller
         $validated = $request->validate([
             'name' => 'sometimes|required|string|max:255',
             'county_id' => 'sometimes|required|exists:counties,id',
+            'postal_code' => 'sometimes|required|string|max:10',
         ]);
 
-        $place->update($validated);
+        $place->update([
+            'name' => $validated['name'] ?? $place->name,
+            'county_id' => $validated['county_id'] ?? $place->county_id,
+        ]);
+
+        // Update or create postal code
+        if (isset($validated['postal_code'])) {
+            // Get the first postal code or create new one
+            $postalCode = $place->postalCodes()->first();
+            if ($postalCode) {
+                $postalCode->update(['postal_code' => $validated['postal_code']]);
+            } else {
+                $place->postalCodes()->create(['postal_code' => $validated['postal_code']]);
+            }
+        }
+
         $place->load(['county', 'postalCodes']);
 
         return response()->json([

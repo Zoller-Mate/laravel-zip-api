@@ -12,8 +12,14 @@ class PlaceController extends Controller
     {
         // Ha distinct_letters paraméter van, visszaadjuk a rendelkezésre álló kezdőbetűket
         if ($request->has('distinct_letters') && $request->distinct_letters == 'true') {
-            $letters = Place::select(DB::raw('DISTINCT UPPER(SUBSTRING(name, 1, 1)) as letter'))
-                ->orderBy('letter')
+            $query = Place::select(DB::raw('DISTINCT UPPER(SUBSTRING(name, 1, 1)) as letter'));
+            
+            // Szűrés megye szerint a distinct letters esetén is
+            if ($request->has('county_id')) {
+                $query->where('county_id', $request->county_id);
+            }
+            
+            $letters = $query->orderBy('letter')
                 ->pluck('letter')
                 ->toArray();
             
